@@ -1,0 +1,17 @@
+LOAD CSV WITH HEADERS FROM 'file:///nodes.csv' AS line
+CREATE (:Paper {idpaper: line.idpaper, doi: line.doi, title: line.title, keywords: line.keywords, year: line.year, abstract: line.abstract, authors: line.authors, url: line.url})
+
+LOAD CSV WITH HEADERS FROM 'file:///relationship.csv' AS line
+MATCH (a:Paper)
+MATCH (b:Paper)
+WHERE a.doi= line.doi and b.doi=line.ReferencesId  
+CREATE (a)-[:Citation]->(b)
+
+MATCH (a:Paper{idpaper:"210"}) -[r:Citation]-> (b:Paper)
+RETURN a,r,b
+
+
+
+
+
+
