@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>GitHub Actions</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Julio Trecenti" />
+    <script src="libs/header-attrs/header-attrs.js"></script>
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <script src="libs/clipboard/clipboard.min.js"></script>
+    <link href="libs/xaringanExtra-clipboard/xaringanExtra-clipboard.css" rel="stylesheet" />
+    <script src="libs/xaringanExtra-clipboard/xaringanExtra-clipboard.js"></script>
+    <script>window.xaringanExtraClipboard(null, {"button":"Copy Code","success":"Copied!","error":"Press Ctrl+C to Copy"})</script>
+    <link href="libs/xaringanExtra-extra-styles/xaringanExtra-extra-styles.css" rel="stylesheet" />
+    <link href="libs/panelset/panelset.css" rel="stylesheet" />
+    <script src="libs/panelset/panelset.js"></script>
+    <link rel="stylesheet" href="custom.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# GitHub Actions
+## Exemplo com live coding
+### Julio Trecenti
+### International Seminar on Statistics with R
+### Junho de 2021
+
+---
+
+
+
+
+<div>
+<style type="text/css">.xaringan-extra-logo {
+width: 110px;
+height: 128px;
+z-index: 0;
+background-image: url(img/logo.png);
+background-size: contain;
+background-repeat: no-repeat;
+position: absolute;
+top:1em;right:1em;
+}
+</style>
+<script>(function () {
+  let tries = 0
+  function addLogo () {
+    if (typeof slideshow === 'undefined') {
+      tries += 1
+      if (tries < 10) {
+        setTimeout(addLogo, 100)
+      }
+    } else {
+      document.querySelectorAll('.remark-slide-content:not(.title-slide):not(.inverse):not(.hide_logo)')
+        .forEach(function (slide) {
+          const logo = document.createElement('a')
+          logo.classList = 'xaringan-extra-logo'
+          logo.href = 'http://ser.uff.br/'
+          slide.appendChild(logo)
+        })
+    }
+  }
+  document.addEventListener('DOMContentLoaded', addLogo)
+})()</script>
+</div>
+
+
+&lt;style type="text/css"&gt;
+a:hover {
+  opacity: 0.5;
+}
+&lt;/style&gt;
+
+# Apresentação
+
+&lt;style type="text/css"&gt;
+td {
+  vertical-align: center;
+}
+&lt;/style&gt;
+&lt;small&gt;Julio Trecenti: **faxineiro de dados**&lt;/small&gt;
+&lt;table style="border:none;border-color:none;"&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;img style="border:none;height:60px" src='https://jtrecenti.github.io/slides/docs/ime2021/img/ime.png' /&gt;&lt;/td&gt;
+&lt;td&gt;Doutorando em Estatística no IME-USP&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;img style="border:none;height:50px" src='https://jtrecenti.github.io/slides/docs/ime2021/img/abj.png' /&gt;&lt;/td&gt;
+&lt;td&gt;Secretário-geral da Associação Brasileira de Jurimetria&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;img style="border:none;height:50px" src='https://jtrecenti.github.io/slides/docs/ime2021/img/terranova.png' /&gt;&lt;/td&gt;
+&lt;td&gt;Sócio da Terranova Consultoria&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;img style="border:none;height:50px" src='https://jtrecenti.github.io/slides/docs/ime2021/img/curso-r.png' /&gt;&lt;/td&gt;
+&lt;td&gt;Sócio da Curso-R&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/table&gt;
+
+---
+
+# Hoje
+
+- Github Actions live coding
+
+- Exemplo com o [repositório do SeR](https://github.com/eventoseroficial/Data_and_Code)
+
+&lt;img src="https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+# Gráfico
+
+
+
+.panelset[
+
+.panel[.panel-name[Pacotes]
+
+
+```r
+library(gh)
+library(magrittr)
+library(purrr)
+library(tibble)
+library(ggplot2)
+library(lubridate)
+```
+
+
+]
+
+.panel[.panel-name[Código]
+
+
+```r
+gh("/repos/eventoseroficial/Data_and_Code/commits") %&gt;% 
+  map_chr(pluck, "commit", "committer", "date") %&gt;% 
+  ymd_hms() %&gt;% 
+  floor_date("day") %&gt;% 
+  as.Date() %&gt;% 
+  enframe() %&gt;% 
+  ggplot(aes(value)) +
+  geom_bar(fill = "darkblue", alpha = .8) +
+  theme_minimal(14) +
+  labs(
+    x = "Data", 
+    y = "Quantidade de commits",
+    title = "Quantidade de commits no repositório do SeR 2021"
+  )
+```
+
+]
+
+.panel[.panel-name[Gráfico]
+
+&lt;img src="jtrecenti_files/figure-html/grafico-1.png" height="400px" style="display: block; margin: auto;" /&gt;
+
+]
+
+.panel[.panel-name[Link]
+
+.center[
+
+### https://github.com/eventoseroficial/Data_and_Code
+
+]
+
+]
+
+]
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false,
+"ratio": "16:9",
+"code_font": {
+"google": "Fira Code"
+}
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>

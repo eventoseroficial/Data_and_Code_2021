@@ -1,0 +1,166 @@
+---
+title: "GitHub Actions"
+subtitle: "Exemplo com live coding"
+author: "Julio Trecenti"
+institute: "International Seminar on Statistics with R"  
+date: 'Junho de 2021'
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    css: [default, custom.css]
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+      ratio: '16:9'
+      code_font: 
+        google: Fira Code
+knit: pagedown::chrome_print
+---
+
+```{r setup, include=FALSE}
+# Não edite este chunk :)
+options(htmltools.dir.version = FALSE)
+library(magrittr, include.only = "%>%")
+```
+
+```{r xaringan-logo, echo=FALSE}
+# Não edite este chunk :)
+xaringanExtra::use_logo(
+  image_url = "img/logo.png", 
+  link_url = "http://ser.uff.br/"
+)
+```
+
+
+```{css echo=FALSE}
+a:hover {
+  opacity: 0.5;
+}
+```
+
+# Apresentação
+
+<style type="text/css">
+td {
+  vertical-align: center;
+}
+</style>
+<small>Julio Trecenti: **faxineiro de dados**</small>
+<table style="border:none;border-color:none;">
+<tr>
+<td><img style="border:none;height:60px" src='https://jtrecenti.github.io/slides/docs/ime2021/img/ime.png' /></td>
+<td>Doutorando em Estatística no IME-USP</td>
+</tr>
+<tr>
+<td><img style="border:none;height:50px" src='https://jtrecenti.github.io/slides/docs/ime2021/img/abj.png' /></td>
+<td>Secretário-geral da Associação Brasileira de Jurimetria</td>
+</tr>
+<tr>
+<td><img style="border:none;height:50px" src='https://jtrecenti.github.io/slides/docs/ime2021/img/terranova.png' /></td>
+<td>Sócio da Terranova Consultoria</td>
+</tr>
+<tr>
+<td><img style="border:none;height:50px" src='https://jtrecenti.github.io/slides/docs/ime2021/img/curso-r.png' /></td>
+<td>Sócio da Curso-R</td>
+</tr>
+</table>
+
+---
+
+# Hoje
+
+- Github Actions live coding
+
+- Exemplo com o [repositório do SeR](https://github.com/eventoseroficial/Data_and_Code)
+
+```{r, echo=FALSE, fig.align='center'}
+knitr::include_graphics("https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif")
+```
+
+
+---
+
+# Gráfico
+
+```{r xaringanExtra-clipboard, echo=FALSE}
+xaringanExtra::use_clipboard()
+# These are the defaults
+xaringanExtra::use_extra_styles(
+  hover_code_line = TRUE,         #<<
+  mute_unhighlighted_code = TRUE  #<<
+)
+xaringanExtra::use_panelset()
+```
+
+.panelset[
+
+.panel[.panel-name[Pacotes]
+
+```{r, message=FALSE, warning=FALSE}
+library(gh)
+library(magrittr)
+library(purrr)
+library(tibble)
+library(ggplot2)
+library(lubridate)
+```
+
+
+]
+
+.panel[.panel-name[Código]
+
+```{r grafico-lab, eval=FALSE, echo=TRUE}
+gh("/repos/eventoseroficial/Data_and_Code/commits") %>% 
+  map_chr(pluck, "commit", "committer", "date") %>% 
+  ymd_hms() %>% 
+  floor_date("day") %>% 
+  as.Date() %>% 
+  enframe() %>% 
+  ggplot(aes(value)) +
+  geom_bar(fill = "darkblue", alpha = .8) +
+  theme_minimal(14) +
+  labs(
+    x = "Data", 
+    y = "Quantidade de commits",
+    title = "Quantidade de commits no repositório do SeR 2021"
+  )
+```
+
+]
+
+.panel[.panel-name[Gráfico]
+
+```{r grafico, eval=TRUE, echo=FALSE, fig.align="center", out.height="400px", dpi = 500,fig.height=4, fig.width=8}
+gh::gh("/repos/eventoseroficial/Data_and_Code/commits") %>% 
+  purrr::map_chr(purrr::pluck, "commit", "committer", "date") %>% 
+  lubridate::ymd_hms() %>% 
+  lubridate::floor_date("day") %>% 
+  as.Date() %>% 
+  tibble::enframe() %>% 
+  ggplot2::ggplot() +
+  ggplot2::aes(value) +
+  ggplot2::geom_bar(fill = "darkblue", alpha = .8) +
+  ggplot2::theme_minimal(14) +
+  ggplot2::labs(
+    x = "Data", 
+    y = "Quantidade de commits",
+    title = "Quantidade de commits no repositório do SeR 2021",
+    caption = "Fonte: https://github.com/eventoseroficial/Data_and_Code"
+  )
+```
+
+]
+
+.panel[.panel-name[Link]
+
+.center[
+
+### https://github.com/eventoseroficial/Data_and_Code
+
+]
+
+]
+
+]
