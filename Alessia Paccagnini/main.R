@@ -25,7 +25,7 @@
 # 1. Setting work directory, installing packages and importing functions
 
 # 1.1 Setting work directory 
-wd <- 'C:\\Users\\aless\\SER\\' # or alternatively one can set the wd manually
+wd <- 'D:\\VAR_code_FP\\SER\\' # or alternatively one can set the wd manually
 
 # Setting work directory
 setwd(wd)
@@ -77,7 +77,7 @@ do.call(grid.arrange , c(plotvar,ncol=2))
 #
 # y{t} = A{1} y{t-1} + A{2} y{t-2} + A{3} y{t-3} + A{4} y{t-4} + c + B{0}e{t}         
 # 
-# where y{t} is the 3 x 1 vector of of endogenous variables and A{p}, for p = 1,...,4, is a  3 Ã— 3 slopes
+# where y{t} is the 3 x 1 vector of of endogenous variables and A{p}, for p = 1,...,4, is a  3 × 3 slopes
 # coefficients matrix.  
 # Moreover, the relationship between reduced form residuals (u{t}) and the structural shocks (e{t}) is:
 #
