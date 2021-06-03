@@ -1,0 +1,286 @@
+---
+title: "League of Legends"
+subtitle: "UNIRIO"
+author: "Fernando Ribeiro"
+date: "Junho/2021"
+output:
+  html_document: 
+    theme: journal
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introdução
+
+![](https://s3-sa-east-1.amazonaws.com/siterawar-wp-uploads/wp-content/uploads/2018/06/18094449/LOL.jpg)
+
+League of Legends (abreviado como LoL) é um jogo eletrônico online gratuito, do gênero MOBA com conceitos de Tower Defense, desenvolvido e publicado pela Riot Games em 2009. No modo mais popular do jogo, em um modo multiplayer no formato 5x5, o objetivo de cada time é destruir o Nexus da equipe adversária, uma construção localizada na base e protegida por outras estruturas.
+
+League of Legends foi bem recebido desde o seu lança-mento e sua popularidade cresceu ao decorrer dos anos. Em julho de 2012, foi o jogo para computador mais jogado na América do Norte e Europa em termos de número de horas jogadas.Até janeiro de 2014, mais de 67 milhões de pessoas jogavam League of Legends por mês, 27 milhões por dia e mais de 7,5 milhões durante o horário de pico.
+
+## Mapa e Objetivos 
+
+![**"Welcome to Summoner's Rift"**](https://s2.glbimg.com/7YyoN-q2hqslIYiSD5I_aWrmXlE=/0x0:1600x1337/984x0/smart/filters:strip_icc()/i.s3.glbimg.com/v1/AUTH_08fbf48bc0524877943fe86e43087e7a/internal_photos/bs/2018/j/U/wOtnlBRQOqIM2D4UZnqQ/mapa1-marca.jpg)
+
+O modo mais popular do jogo se passa no mapa Summoner’s Rift, onde cada partida dura em média 30 minutos, o time Azul e Vermelho se enfrentam sem chance de empate, dividido em 3 rotas (Topo, Meio e Inferior), o objetivo é destruir o Nexus Inimigo localizado nas extremidades do mapa. Cada partida é única e possui diversas fatores que influenciam na vitória, como diversidade de campões com habilidades únicas, primeira torre destruída, número de abates, wards posionadas (ferramenta de permite visão e controle de mapa), além de objetivos neutros como Dragão e Baron.
+
+Através de uma base de dados de jogos do elo Challenger (classificação dos melhores 0,01% jogadores do servidor), foram analisados dados de uma pespectiva do time azul.
+
+## Carregando base de dados 
+
+A base pode ser encontrada através do link: 
+
+https://www.kaggle.com/gyejr95/league-of-legends-challenger-ranked-games2020?select=Challenger_Ranked_Games.csv 
+
+A amostra utilizada é dos jogos do rank Challenger, sendo analisado os jogos de mais alto nível
+
+```{r}
+library(readr)
+Challenger <- read_csv("C:/Users/ferna/Desktop/Palestra SER/Challenger.csv")
+
+Challenger$blueWins <- as.factor(Challenger$blueWins)
+Challenger$blueFirstBlood <- as.factor(Challenger$blueFirstBlood)
+Challenger$blueFirstBaron <- as.factor (Challenger$blueFirstBaron)
+Challenger$blueFirstTower <- as.factor (Challenger$blueFirstTower)
+Challenger$blueFirstDragon <- as.factor (Challenger$blueFirstDragon)
+Challenger$blueFirstInhibitor <- as.factor (Challenger$blueFirstInhibitor)
+
+Challenger$blueWins<-gsub(0, "Lose", Challenger$blueWins)
+Challenger$blueWins<-gsub(1, "Win", Challenger$blueWins)
+Challenger$blueFirstTower<-gsub(0, "Red Tower", Challenger$blueFirstTower)
+Challenger$blueFirstTower<-gsub(1, "Blue Tower", Challenger$blueFirstTower)
+Challenger$blueFirstBaron<-gsub(0, "Blue Baron", Challenger$blueFirstBaron)
+Challenger$blueFirstBaron<-gsub(1, "Red Baron", Challenger$blueFirstBaron)
+Challenger$blueFirstBlood<-gsub(0, "No", Challenger$blueFirstBlood)
+Challenger$blueFirstBlood<-gsub(1, "Yes", Challenger$blueFirstBlood)
+Challenger$blueFirstDragon<-gsub(0, "Red Dragon", Challenger$blueFirstDragon)
+Challenger$blueFirstDragon<-gsub(1, "Blue Dragon", Challenger$blueFirstDragon)
+Challenger$blueFirstInhibitor<-gsub(0, "No", Challenger$blueFirstInhibitor)
+Challenger$blueFirstInhibitor<-gsub(1, "Yes", Challenger$blueFirstInhibitor)
+
+library(DT) 
+datatable(Challenger)
+```
+
+## Entendendo as Variáveis
+
+
+```{r}
+summary(Challenger$gameDuraton)
+
+summary(Challenger$blueKills)
+
+summary(Challenger$redKills)
+
+summary(Challenger$blueAssist)
+
+summary(Challenger$redAssist)
+
+summary(Challenger$blueTotalGold)
+
+summary(Challenger$redTotalGold)
+```
+
+Acima vejos algumas informações estatísticas a respeito de alguns aspectos do jogo. Notamos que em praticamente todos os casos a média se encontra bem próxima da mediana, o que signica que temos poucas presentas de outliers. Também notamos informações importantes acerca dos dados do jogo. Percebemos o tempo médio de jogo é de 1449 segundos, cerca de 24minutos, a média de Abates é 24.1, a média de Assistências é de 39.9, e a média total de Ouro por equipe é de aproximadamente 48k.
+
+Notamos variações muito pequenas nos valores médios do time azul e vermelho, evidenciando mais uma vez o equilíbrio entre as amostras representado no começo deste estudo.
+
+### Particularidades dos Times
+
+```{r}
+par(mfrow = c (1, 2))
+tabpizza<-table(Challenger$blueWins)
+pie(tabpizza)
+
+tab_ft<-table(Challenger$blueFirstTower)
+barplot(tab_ft,
+        ylim = c(0,15000),
+        col = c("#0080FF", "#B40404"))
+
+tab_drag<-table(Challenger$blueFirstDragon)
+barplot(tab_drag,
+        ylim = c(0,20000),
+        col = c("#0080FF", "#B40404"))
+
+tab_baron<-table(Challenger$blueFirstBaron)
+barplot(tab_baron,
+        ylim = c(0,20000),
+        col = c("#0080FF", "#B40404"))
+```
+
+Notamos algumas particularidade em relação à distruição de objetivos pelo mapa. Percebemos que a amostra tem distruições equivalentes de Vitórias e Derrotas, e pouca vantagem do Azul em relação ao vermelho no que diz respeito à destruição da primeira torre. Contudo, notamos uma vantagem mais significante do time Vermelho no que diz respeito ao primeiro Dragão, e uma larga vantagem do Azul no quis respeito ao primeiro Dragão. Isto se deve em função, principalmente, do design do mapa de Summoners Rif’t, que apesar de quase espelhado, a localização e execução se torna mais segura pra um time ou outro.
+
+
+## Histograma
+
+```{r}
+par(mfrow = c (1, 2))
+hist(Challenger$gameDuraton,
+     main = "Duração do jogo",
+     col = "#8A0886",
+     sub = "Maior concentração na altura de 1500",
+     ylim = c(0,6000),
+     xlim = c(0,3000))
+hist(Challenger$blueTotalGold,
+     col = "#FF8000",
+     main = "Gold Total",
+     sub = "Maior concentração altura de 50k",
+     ylim = c(0,6000))
+```
+
+A seguir representada a igualdade entre os 2 times
+
+```{r}
+par(mfrow = c (1, 2))
+hist(Challenger$blueKills,
+     main = "Abates Azul",
+     col = "#5858FA",
+     sub = "")
+hist(Challenger$redKills,
+     col = "#FE2E64",
+     main = "Abates Vermelho",
+     sub = "")
+```
+
+## Correlação 
+
+##### Relação entre Abates e Total de Ouro
+
+```{r}
+plot(Challenger$blueTotalGold, Challenger$blueKills,
+     col = "#64FE2E",
+     pch = 20)
+abline(lsfit(Challenger$blueTotalGold, Challenger$blueKills))
+
+cor(Challenger$blueTotalGold, Challenger$blueKills)
+```
+
+Notamos pela inclinação da reta que existe uma relação linear positiva forte e que quanto maior o número de abates, maior a quantidade de Ouro, o que é esperado uma vez que os Abates concedem uma quantidade de Ouro dentro do jogo. Também é possível ver o Coeficiente de correlação de 0.819, numa escala que vai de -1 a +1.
+
+#### Relação entre Sentinelas de Visão colocadas e Abates
+
+```{r}
+plot(Challenger$blueWardPlaced, Challenger$blueKills,
+     col = "#F781D8",
+     pch = 20)
+abline(lsfit(Challenger$blueWardPlaced, Challenger$blueKills))
+
+cor(Challenger$blueWardPlaced, Challenger$blueKills)
+```
+
+Neste caso, vemos que a reta possui uma inclinação bem modesta, pelo coeficiente de correlação de 0.104 podemos constatar que a relação entre essas duas variáveis é bem fraca. Constatamos que o número de Wards colocadas praticamente não interere na quantitade de abates totais.
+
+#### Relação entre Destruição de Wards e Destruição de Torres
+
+```{r}
+plot(Challenger$blueTowerKills, Challenger$blueWardkills,
+     col = "#A5DF00",
+     pch = 20)
+abline(lsfit(Challenger$blueTowerKills,Challenger$blueWardkills))
+
+cor(Challenger$blueTowerKills,Challenger$blueWardkills)
+```
+
+Notamos que pelo gráfico e pelo coeficiente de 0.39 que existe uma correlação alternada de fraca para moderada. Logo, destruir wards interfere na destruição de torres.
+
+### Teste QuiQuadrado
+
+A seguir vamos realizar o teste qui-quadrado de Pearson, para verificar se a hipótese é verdadeira para o caso destas duas variávies qualitativas.
+
+H0: NÃO EXISTE ASSOCIAÇÃO ENTRE AS DUAS VARIÁVEIS
+H1: EXISTE ASSOCIAÇÃO
+VALOR ESPERADO MAIOR QUE 5
+ALPHA = 0,05
+SE pvalor <= alpha, rejeito H0
+SE pvalor -> alpha, não rejeito H0
+
+
+##### Primeiro Abate x Vitória
+
+```{r}
+teste_qui1 <- chisq.test(Challenger$blueFirstBlood, Challenger$blueWins)
+teste_qui1$expected
+options(scipen = 999)
+teste_qui1$p.value
+```
+
+Como observado, os valores esperados são maiores que 5, condição para a utilização do teste de Pearson, então seguimos com o teste e encontramos o pvalor = 0,0000…37, valor menor que o nosso Alpha, ou seja, rejeitamos a hipótese H0, e ficamos com H1, sendo assim, concluímos que existe relação entre as essas 2 variáveis.
+
+##### Primeira Torre x Primeiro Dragão
+
+```{r}
+teste_qui2 <- chisq.test(Challenger$blueFirstTower, Challenger$blueFirstDragon)
+teste_qui2$expected
+
+teste_qui2$p.value
+```
+
+Assim como no exemplo anterior, os valores esperados do teste de Pearson são maiores que 5, viabilizando o teste, o pvalor=0,000…808541, valor inferior ao Alpha, ou seja, rejeita-se H0, ficando com H1, confirmando a relação entre as duas variáveis.
+
+## Teste de Normalidade
+
+```{r}
+shapiro.test(Challenger$blueWardPlaced[0:5000])
+shapiro.test(Challenger$blueKills[0:5000])
+shapiro.test(Challenger$blueTowerKills[0:5000])
+```
+
+Foi aplicado o teste de Normalidade de Shapiro nas 3 variáveis quantitativas que usamos anteriormente. Como em todos os casos o PVALOR encontrado foi inferior a 0.05, usaremos o teste Wilcox a seguir para analisar essas amostras.
+
+
+## Teste de Wilcoxon
+
+H0: Os dois tem a mesma distruição
+H1: Os dois tem distruições diferentes
+alpha: 0.05
+Se pvalor menor que alpha, rej H0
+Se pvalor maior que alpha, não rej H0
+
+
+##### Vitórias x Wards Colocadas
+##### Vitórias x Abates
+##### Vitórias x Torres Destruídas 
+
+```{r}
+wilcox.test(Challenger$blueWardPlaced~Challenger$blueWins)
+wilcox.test(Challenger$blueKills~Challenger$blueWins)
+wilcox.test(Challenger$blueTowerKills~Challenger$blueWins)
+```
+
+Como observamos, todas as hipóteses tem rejeitam H0, logo, concluímos que nos 3 casos os grupos Vitória e Derrota tem distruições diferentes.
+
+## Impactos na Vitória
+
+```{r}
+library(dplyr)
+Challenger %>%
+        group_by(blueWins) %>%
+        summarize(media=mean(blueWardPlaced, na.rm = T),
+                  mediana=median(blueWardPlaced, na.rm = T),
+                  desvio_padrao=sd(blueWardPlaced))
+
+Challenger %>%
+        group_by(blueWins) %>%
+        summarize(media=mean(blueKills, na.rm = T),
+                  mediana=median(blueKills, na.rm = T),
+                  desvio_padrao=sd(blueKills))
+
+Challenger %>%
+        group_by(blueWins) %>%
+        summarize(media=mean(blueTowerKills, na.rm = T),
+                  mediana=median(blueTowerKills, na.rm = T),
+                  desvio_padrao=sd(blueTowerKills))
+```
+
+Observamos um impacto menos signicativo das Sentinelas de Visão para a vitória, e uma relevância maior dos Abates e das Torres para este grupo.
+
+
+
+## Conclusão e Considerações  
+
+Observamos diversas variáveis que fazem referências a mini objetivos dentro de um complexo jogo de estratégias. Como é de se imaginar, a grande maioria das variáveis colaboram para o desenvolvimento das demais, haja vista a dominação parcial do mapa, culminando mais facilmente na vitória. Notamos que algumas variáveis tem maior impacto que outras no objetivo final, como é o caso dos “Abates” e outras menos impacto, como é o caso das “Wards”. Além disso, neste estudo focamos predominantemente nos dados do time Azul, pois entendemos que apenas as variáveis “Primeiro Baron” e “Primeiro Dragon” tinham impacto signativo entre os times Azul e Vermelho, enquanto as demais apresentam desempenho semelhante, sem prejuízos para os resultados do estudo.
