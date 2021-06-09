@@ -1,0 +1,2073 @@
+---
+title: "Interface com RSiconfi"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+
+
+library(flexdashboard)
+library(rsiconfi)
+library(shiny)
+library(networkD3)
+library(ggplot2)
+library(viridis)
+library(readr)
+library(dplyr)
+library(shinyjs)
+library(kableExtra)
+library(purrr)
+library(readxl)
+library(readr)
+library(geobr)
+library(sf)
+library(devtools)
+library(rsiconfi)
+library(ROracle)
+library(stringr)
+library(tidyr)
+
+
+
+#brasil_map<- read_country()
+#muni_map <- read_municipal_seat()
+#state_map <- read_state()
+
+
+
+
+#saveRDS(brasil_map, "brasil_map.rds")
+#saveRDS(muni_map, "muni_map.rds")
+#saveRDS(state_map, "state_map.rds")
+
+Sys.setenv(TZ = "America/Sao_Paulo")
+
+brasil_map<- readRDS("brasil_map.rds")
+muni_map<- readRDS("muni_map.rds")
+state_map<- readRDS("state_map.rds")
+
+
+#Define tópicos com tratamentos específicos
+
+topico_RO <-1 #Receita orçamentária
+topico_DO <- 2 #Despesa orçamentária
+topico_funcao<- 3 #Despesa por funcao
+topico_sub_funcao<- 4 #Despesa por sub-funcao
+topico_RCL <- 5 #RCL
+topico_pessoal <- 6 #Despesa com pessoal
+topico_min_edu <- 7 #mínimo constitucional com educação
+topico_min_saude <- 8 #mínimo constitucional com educação
+
+show_graph<<-TRUE
+show_data<<- TRUE
+
+load("dados_cluster.RData")
+
+library(readr)
+#Municpios_IBGE <- read_csv("Municpios_IBGE.csv")
+
+municipios_IBGE<- 
+  municipios_IBGE %>%
+  mutate(pop_estimada = as.numeric(stringr::str_remove_all(pop_estimada,","))) 
+
+RELATORIO_DTB_BRASIL_MUNICIPIO <- read_excel("RELATORIO_DTB_BRASIL_MUNICIPIO.xls")
+
+#dados_municipios_ibge_2010_2017 <- read_excel("dados_municipios_ibge_2010_2017.xls")
+
+ibge_pib_mun <- read_delim("ibge_pib_mun.csv", 
+    ";", escape_double = FALSE, col_types = cols(X1 = col_skip(), 
+        cod_mun = col_character()), locale = locale(encoding = "LATIN1",decimal_mark = ",", grouping_mark = "."), 
+    trim_ws = TRUE)
+
+
+
+faixas_ibge<-c("Até 2.000 pessoas", "De 2.001 a 5.000 pessoas","De 5.001 a 10.000 pessoas", "De 10.001 a 20.000 pessoas", "De 20.001 a 50.000 pessoas", "De 50.001 a 100.000 pessoas", "De 100.001 a 500.000 pessoas","Mais de 500.000 pessoas")
+
+ibge_pib_mun<-
+ibge_pib_mun %>%
+  arrange(desc(PIB_PC)) %>%
+  mutate(pos_PC = seq(1,NROW(ibge_pib_mun),1)) %>%
+  arrange(desc(PIB_total)) %>%
+  mutate(pos_PIB = seq(1,NROW(ibge_pib_mun),1))
+
+
+glossario_siconfi <- read_delim("glossario_siconfi.csv", 
+     ";", escape_double = FALSE, trim_ws = TRUE)
+
+instrucoes <- read_delim("instrucoes.csv", 
+    ";", escape_double = FALSE, trim_ws = TRUE)
+
+state_element <- read_delim("state_element.csv", 
+    ";", escape_double = FALSE, trim_ws = TRUE)
+
+state_button_next <- read_delim("state_button_next.csv", 
+    ";", escape_double = FALSE, col_types = cols(X4 = col_skip()), 
+    trim_ws = TRUE)
+
+#contas<-rsiconfi::get_account_dca(2018,"I-E",1)
+
+hidden(
+  div(id = "tipo_cons_mun", radioButtons("tipo_cons_mun", label ="Informe o filtro para municípios", choices = c("Escolher de uma lista", "Todos de uma ou mais UFs","Por faixa populacional"), selected = "Escolher de uma lista"))
+  
+         )
+
+conecta_sql<- function(a_encoding="UTF-8"){
+  
+  library( ROracle)
+  
+  conexao_sql <- read_csv("conexao_sql.csv", 
+    col_types = cols(senha = col_character()))
+  
+
+  
+  drv <- dbDriver("Oracle")
+  user<- conexao_sql$user 
+  senha<-conexao_sql$senha 
+  
+  con1 <- dbConnect(drv, user , senha, encoding= a_encoding, conexao_sql$conexao )
+
+  con1
+  
+  
+}
+
+
+get_lista_funcao<- function(full_df = FALSE){
+  
+  con1<- conecta_sql("LATIN1")
+  consulta<- "SELECT ID_DIM_FF as ID_FSF, TO_NCHAR(DS_FUNCAO) as DESC_FSF  FROM PRD_SICONFI.DIM_FUNCAO"
+
+  res_consulta<- dbSendQuery(con1, consulta)
+  df_result<- dbFetch(res_consulta)
+  
+  df_result<-
+    df_result %>%
+    filter(ID_FSF>0) %>%
+    arrange(DESC_FSF)
+  
+  
+  #print(df_result$NO_LABEL_EIXO_Y)
+  
+  dbClearResult(res_consulta)
+  
+  dbDisconnect(con1)
+  
+  
+  if (!full_df){
+    df_result$DESC_FSF
+    
+  } else{
+    df_result
+    
+  }
+  
+  
+}
+
+
+get_lista_sub_funcao<- function(){
+  
+  funcao<- get_lista_funcao(TRUE)
+  
+  sub_funcao <- readr::read_csv("sub_funcao.csv")
+  
+  fun_sub_func<-
+  sub_funcao %>%
+    inner_join(funcao) %>%
+    arrange(DESC_FSF, DS_SUBFUNCAO) %>%
+    mutate(sub_funcao = str_c(DESC_FSF, DS_SUBFUNCAO, sep = "-")) %>%
+    select(sub_funcao)
+  
+  fun_sub_func$sub_funcao
+  
+}
+
+extract_sub_funcao <- function(ff_func_sub){
+  
+  data_sub <- tibble(func_sub_funcao = ff_func_sub)
+   
+  data_sub<- separate(data_sub, func_sub_funcao,into= c("funcao", "sub_funcao"),sep = "-"  )
+  
+  data_sub$sub_funcao
+    
+  
+}
+
+
+get_lista_atividades<- function(){
+  
+  (ibge_pib_mun%>%
+    group_by(atvidade_economica) %>%
+    summarise(
+      total = sum(PIB_total)
+    ) %>%
+    ungroup() %>%
+    mutate(atvidade_economica = reorder(atvidade_economica, total)) %>%
+    arrange(desc(atvidade_economica)) %>%
+    select(atvidade_economica))$atvidade_economica
+  
+}
+
+
+get_lista_mesoregioes<- function(){
+  
+  (RELATORIO_DTB_BRASIL_MUNICIPIO%>%
+    arrange(Nome_Mesorregião) %>%
+    distinct(Nome_Mesorregião))$Nome_Mesorregião
+    
+}
+
+
+get_lista_instituicao<- function(opcao){
+  
+  if(opcao$escopo == "Governo Federal"){
+    lista_instituicao<-1
+  } else if(opcao$escopo == "Estados"){
+    
+    cod_uf<-   
+      (municipios_IBGE%>%   
+         filter(uf %in% opcao$uf) %>%   
+         distinct(cod_uf))$cod_uf
+    
+    
+    lista_instituicao <- cod_uf
+    
+  } else if (opcao$escopo == "Municípios"){
+    
+    if (opcao$tipo_cons_mun=="Escolher de uma lista"){
+      cod_mun<- 
+        (municipios_IBGE%>%
+           filter(nome_municipio %in% opcao$municipio) %>%
+           select(cod_mun))$cod_mun
+      
+      lista_instituicao <- cod_mun
+      
+      
+    } else if (opcao$tipo_cons_mun=="Por faixa populacional - quartis"){
+      
+      IBGE<- 
+        municipios_IBGE %>%
+        filter(!is.na(pop_estimada)) %>%
+        mutate(pop_estimada = as.numeric(stringr::str_remove_all(pop_estimada,","))) 
+      
+      mun_q1<-
+        (IBGE %>%
+           filter(pop_estimada<=quantile(IBGE$pop_estimada, 0.25, na.rm = TRUE)))$cod_mun
+      
+      mun_q2<-
+        (IBGE %>%
+           filter(pop_estimada>quantile(IBGE$pop_estimada, 0.25, na.rm = TRUE),
+                  pop_estimada<=quantile(IBGE$pop_estimada, 0.5, na.rm = TRUE)))$cod_mun
+      
+      mun_q3<-
+        (IBGE %>%
+           filter(pop_estimada>quantile(IBGE$pop_estimada, 0.5, na.rm = TRUE),
+                  pop_estimada<=quantile(IBGE$pop_estimada, 0.75, na.rm = TRUE)))$cod_mun
+      
+      mun_q4<-
+        (IBGE %>%
+           filter(pop_estimada>quantile(IBGE$pop_estimada, 0.75, na.rm = TRUE)))$cod_mun
+      
+      #"Primeiro quartil", "Segundo quartil","Terceiro quartil", "Quarto quartil"
+      
+      lista_instituicao<- c(numeric())
+      if ("Primeiro quartil" %in% opcao$mun_pop){
+        lista_instituicao<- c(lista_instituicao,mun_q1)
+      }
+      
+      if ("Segundo quartil" %in% opcao$mun_pop){
+        lista_instituicao<- c(lista_instituicao,mun_q2)
+      }
+      
+      if ("Terceiro quartil" %in% opcao$mun_pop){
+        lista_instituicao<- c(lista_instituicao,mun_q3)
+      }
+      
+      if ("Quarto quartil" %in% opcao$mun_pop){
+        lista_instituicao<- c(lista_instituicao,mun_q4)
+      }
+      
+    } else if (opcao$tipo_cons_mun=="Por faixa populacional - grupos ibge"){
+      
+      IBGE<- 
+        municipios_IBGE %>%
+        filter(!is.na(pop_estimada)) %>%
+        mutate(pop_estimada = as.numeric(stringr::str_remove_all(pop_estimada,","))) 
+      
+      mun_f1<-
+        (IBGE %>%
+           filter(pop_estimada<=2000))$cod_mun
+      
+      mun_f2<-
+        (IBGE %>%
+           filter(pop_estimada>2001,
+                  pop_estimada<=5000))$cod_mun
+      
+      mun_f3<-
+        (IBGE %>%
+           filter(pop_estimada>5001,
+                  pop_estimada<=10000))$cod_mun
+      
+      mun_f4<-
+        (IBGE %>%
+           filter(pop_estimada>10001,
+                  pop_estimada<=20000))$cod_mun
+      
+      mun_f5<-
+        (IBGE %>%
+           filter(pop_estimada>20001,
+                  pop_estimada<=50000))$cod_mun
+      
+      mun_f6<-
+        (IBGE %>%
+           filter(pop_estimada>50001,
+                  pop_estimada<=100000))$cod_mun
+      
+      mun_f7<-
+        (IBGE %>%
+           filter(pop_estimada>100001,
+                  pop_estimada<=500000))$cod_mun
+
+      mun_f8<-
+        (IBGE %>%
+           filter(pop_estimada>500000))$cod_mun
+
+            
+
+      #"Primeiro quartil", "Segundo quartil","Terceiro quartil", "Quarto quartil"
+      
+      
+      
+      
+      lista_instituicao<- c(numeric())
+      if (faixas_ibge[1] %in% opcao$mun_pop_faixa){
+        lista_instituicao<- c(lista_instituicao,mun_f1)
+      }
+      
+      if (faixas_ibge[2] %in% opcao$mun_pop_faixa){
+        lista_instituicao<- c(lista_instituicao,mun_f2)
+      }
+
+      if (faixas_ibge[3] %in% opcao$mun_pop_faixa){
+        lista_instituicao<- c(lista_instituicao,mun_f3)
+      }
+      if (faixas_ibge[4] %in% opcao$mun_pop_faixa){
+        lista_instituicao<- c(lista_instituicao,mun_f4)
+      }
+      if (faixas_ibge[5] %in% opcao$mun_pop_faixa){
+        lista_instituicao<- c(lista_instituicao,mun_f5)
+      }
+      if (faixas_ibge[6] %in% opcao$mun_pop_faixa){
+        lista_instituicao<- c(lista_instituicao,mun_f6)
+      }
+      if (faixas_ibge[7] %in% opcao$mun_pop_faixa){
+        lista_instituicao<- c(lista_instituicao,mun_f7)
+      }
+      
+      if (faixas_ibge[8] %in% opcao$mun_pop_faixa){
+        lista_instituicao<- c(lista_instituicao,mun_f8)
+      }
+            
+
+    } else if (opcao$tipo_cons_mun=="Todos de uma ou mais UFs"){
+      
+      cod_uf<-   
+        (municipios_IBGE%>%   
+           filter(uf %in% opcao$mun_uf) %>%   
+           distinct(cod_uf))$cod_uf
+      #print("opcao")
+      #print(opcao)
+      lista_instituicao <- cod_uf
+      
+      
+    } else if (opcao$tipo_cons_mun=="Por Mesoregião"){
+      
+      lista_instituicao<-   
+        (RELATORIO_DTB_BRASIL_MUNICIPIO %>%
+        filter(Nome_Mesorregião %in% opcao$mun_meso) %>%
+        select(`Código Município Completo`))$  `Código Município Completo`
+      
+      
+    } else if (opcao$tipo_cons_mun=="Por posição PIB per-capita"){
+      
+      #print(opcao$mun_pib_pc)
+      
+      lista_instituicao<-   
+        (ibge_pib_mun %>%
+        filter(between(pos_PC,opcao$mun_pib_pc[1],opcao$mun_pib_pc[2])))$cod_mun
+      
+      
+    } else if (opcao$tipo_cons_mun=="Por posição PIB total"){
+      
+      #print(opcao$mun_pib_total)
+      
+      lista_instituicao<-   
+        (ibge_pib_mun %>%
+        filter(between(pos_PIB,opcao$mun_pib_total[1],opcao$mun_pib_total[2])))$cod_mun
+    
+    } else if (opcao$tipo_cons_mun=="Por principal atividade econômica"){
+      
+      #print(opcao$mun_atv_eco)
+      
+      lista_instituicao<-   
+        (ibge_pib_mun %>%
+        filter(atvidade_economica %in% opcao$mun_atv_eco ))$cod_mun
+    
+    }  else if (opcao$tipo_cons_mun=="Por agrupamento econômico"){
+      
+      #print(opcao$mun_grp_eco)
+      
+        cod_mun_cluster<- 
+        (municipios_IBGE%>%
+           filter(nome_municipio %in% opcao$mun_grp_eco) %>%
+           select(cod_mun))$cod_mun   
+        
+        cluster_sel<-
+        (dados_cluster %>%
+        filter(cod_mun == cod_mun_cluster) %>%
+          select(cluster))$cluster
+        
+        lista_instituicao<-
+        (dados_cluster %>%
+        filter(cluster == cluster_sel) %>%
+          select(cod_mun))$cod_mun
+
+    }
+  
+  lista_instituicao
+  }
+  
+}
+
+#Apresentação SER máquina de estado
+set_next_state<- function(current_state,a_button){
+  
+  
+  
+  
+  #print("início next state")
+  #hide the element associated with the current state
+  element<-
+    (state_element %>%
+    filter(state==current_state)%>%
+    select(element))$element
+  
+  
+  #print("passou no hide element")
+  shinyjs::hide(element)
+  
+
+  
+  #identify the next state
+  
+  special_state<- FALSE
+  
+  full_state<-
+  state_button_next %>%
+    filter(state == current_state,
+           button == a_button)
+  
+  
+  
+  # full_state<-
+  # (state_button_next %>%
+  #   filter(state == 2,
+  #          button == "A") %>%
+  #   select(next_state))$next_state
+  
+  #print("full_state")
+  #print(full_state)
+  
+  if(NROW(full_state)>0){
+    
+    for (i in 1:NROW(full_state)){
+      
+      condition<- eval(parse(text=full_state$condition[i]))
+      
+      if (condition){break()}
+      
+    }
+
+    
+    if (condition){
+      next_state_f <- full_state$next_state[i]
+      special_state <- TRUE
+    }
+    
+  }
+  
+  
+  if (!special_state  && a_button == "P"){
+    
+    
+    next_state_f<- trunc(as.numeric(current_state)) +1
+  }
+
+  if (!special_state && a_button == "A"){
+    next_state_f<- trunc(as.numeric(current_state)) - 1
+    
+  }
+  
+  
+  
+  #show the elements and buttons associated with the next state
+  df_state_element<-
+    state_element %>%
+    filter(state==next_state_f)
+  
+  
+  # df_state_element<-
+  #   state_element %>%
+  #   filter(state==2)
+  
+  
+  element<- df_state_element$element
+  button_a<- df_state_element$button_a
+  button_p<- df_state_element$button_p
+  button_f<- df_state_element$button_f
+  
+  #print("df_state_element")
+  #print(df_state_element)
+  
+  #print(next_state_f)
+  promise_state<- 
+    state_button_next %>%
+    filter(state == next_state_f,
+           button == "P")
+  #print("promise_state")
+  #print(promise_state)
+  
+  if (NROW(promise_state)>0){
+    
+    for (i in 1:NROW(promise_state)){
+      
+      condition<- eval(parse(text=promise_state$condition[i]))
+      #print("condition")
+      #print(condition)
+      
+      #print("text_condition")
+      #print(promise_state$condition[i])
+      
+      if (condition){break()}
+      
+    }
+
+    
+    ##print(promise_state$condition[1])
+    condition<- eval(parse(text=promise_state$condition[i]))
+    #print(condition)
+    if(condition){
+     button_p<-1 
+    } 
+  }
+  
+  #if(special_state){button_p<-1}
+
+  updateTextInput(session = session, inputId = "state", value = next_state_f)
+  
+  #print("element")
+  #print(element)
+  
+  
+  #print("button_a")
+  #print(button_a)
+  #print("passou no hide e shinyjs::show")
+  shinyjs::show(element)
+  
+  
+  if(button_a==1){
+    shinyjs::show("anterior")
+  } else{
+    shinyjs::hide("anterior")
+  }
+  
+  if (button_p==1){
+    shinyjs::show("proximo")
+  } else{
+    shinyjs::hide("proximo")
+  }
+    
+  
+  
+  if (button_f==1){
+    shinyjs::show("finalizar")
+  } else{
+    shinyjs::hide("finalizar")
+  }
+  
+
+
+}
+
+#Apresentação SER sql
+execute_SQL <- function(a_demo, a_anexo, rotulo_eixo_x, rotulo_eixo_y, opcao, filtro_opcional=""){
+  
+  cond_erro<<- FALSE
+  
+  
+
+  
+  con1<- conecta_sql()
+  
+  cons_colunas<- 
+    "distinct  
+SICONFI.AN_EXERCICIO, 
+SICONFI.NR_PERIODO,
+SICONFI.IN_PERIODICIDADE, 
+TO_NCHAR(SICONFI.CO_ESFERA) as CO_ESFERA, 
+TO_NCHAR(SICONFI.CO_PODER) as CO_PODER, 
+SICONFI.ID_ENTE, 
+TO_NCHAR(SICONFI.NO_ENTE) as NO_ENTE, 
+SICONFI.SG_ENTE, 
+TO_NCHAR(NO_LABEL_EIXO_X) as NO_LABEL_EIXO_X, 
+TO_NCHAR(NO_LABEL_EIXO_Y) as NO_LABEL_EIXO_Y , 
+VALUE, 
+QT_HABITANTE, 
+TO_NCHAR(ELEMENTLABEL) as ELEMENTLABEL"
+  
+  
+  if (opcao$topico %in% c(topico_RCL,topico_pessoal)){
+    cons_colunas <- paste0(cons_colunas, ", TO_NCHAR(SICONFI.NO_ORGAO) as NO_ORGAO, TO_NCHAR(NO_LABEL_ROTULO) as NO_LABEL_ROTULO")
+  }
+    
+    
+    
+  
+  
+  
+  cons_tabela<- "PRD_SICONFI.XBRL_FATONUMERICO SICONFI"
+  
+  
+  
+  
+  
+  
+
+  
+  #filtros obrigatõrios
+  
+  lista_ano<- opcao$ano[1]
+  
+  
+  for (ano in opcao$ano[-1]){
+    lista_ano<- paste(lista_ano,ano,sep = ",")
+  }
+  
+
+  opcao_uf <- (opcao$tipo_cons_mun=="Todos de uma ou mais UFs" & opcao$escopo == "Municípios")
+  
+  if(opcao_uf){
+    lista_instituicao_sel<- opcao$mun_uf
+
+  } else{
+    lista_instituicao_sel <- get_lista_instituicao(opcao)
+    
+  }
+  #print("lista instituicao")
+  #print(lista_instituicao_sel)
+  
+  
+  rept<- (NROW(lista_instituicao_sel)%/%1000)
+  #print("rept")
+  #print(rept)
+  
+  ini<-1
+  
+  df_consulta<- map_dfr(0:rept, function(arg_i){
+    
+    
+    
+    ini<-1+arg_i*1000
+    fim<- ifelse((arg_i+1)*1000>NROW(lista_instituicao_sel),NROW(lista_instituicao_sel),(arg_i+1)*1000)
+    #print("ini")
+    #print(ini)
+    #print("fim")
+    #print(fim)
+    
+    lista_instituicao <- lista_instituicao_sel[ini:fim]
+    #print( "tamanho da lista")
+    #print(NROW(lista_instituicao))
+    
+    lista_instituicao_script<- paste0("'",lista_instituicao[1], "'")
+    for (instituicao in lista_instituicao[-1]){
+      lista_instituicao_script<- paste0(lista_instituicao_script,",","'", instituicao, "'")
+    }
+    
+    
+    
+    filtro_obrigatorio<-
+      paste0( 
+        " SICONFI.CO_TIPO_DEMONSTRATIVO='", 
+        a_demo,
+        "'",
+        " and ",
+        "SICONFI.NO_ANEXO= '",
+        
+        a_anexo,
+        "'",
+        " and ",
+        "SICONFI.AN_EXERCICIO in (",
+        lista_ano,
+        ") and ",
+        ifelse(opcao_uf,"SICONFI.CO_ESFERA = 'M' and SG_ENTE in(","SICONFI.ID_ENTE in(" ),
+        lista_instituicao_script,
+        ")"
+        
+      )
+    
+    
+    #LEFT JOIN PRD_SICONFI.MVW_HISTORICO_COLETA ON                      SICONFI.ID_COLETA_SK= PRD_SICONFI.MVW_HISTORICO_COLETA.ID_COLETA_SK
+    
+    consulta<-
+      paste(
+        "select",
+        cons_colunas,
+        #"from",
+        #cons_tabela,
+        "FROM PRD_SICONFI.XBRL_FATONUMERICO SICONFI ",
+        "where",
+        filtro_obrigatorio,
+        ifelse(filtro_opcional != "", "and",""),
+        filtro_opcional,
+        sep = " "
+      )
+    print("consulta")
+    print(consulta)
+    #res_consulta<- dbSendQuery(con1, consulta)
+    res_consulta<-try(dbSendQuery(con1, consulta))
+
+    if(inherits(res_consulta, "try-error")){
+      print("Erro no oracle")
+      cond_erro<<- TRUE
+      return()
+    }
+
+    #print("sem erro no oracle")
+    #print(res_consulta)
+    
+    
+    
+    #print("antes dbFetch")
+    df_result<- try(dbFetch(res_consulta))
+    if(inherits(df_result, "try-error")){
+      print("Erro no oracle")
+      cond_erro<<- TRUE
+      return()
+    }
+
+    
+    #print("depois dbFetch")
+    
+    
+    
+ 
+        
+    dbClearResult(res_consulta)
+    
+    df_result
+    
+    
+    
+  })
+  
+  
+  if (cond_erro){
+    return()
+  }
+
+  dbDisconnect(con1)
+  
+  #print("disconnect")
+  
+  names(df_consulta)[9:10]<- c(rotulo_eixo_x, rotulo_eixo_y)
+    
+  
+  df_consulta
+
+  
+  
+  
+}
+
+#Apresentação SER gráfico
+generate_graph<- function(opcao){
+  
+  
+  dw_graph<-generate_dt(opcao,TRUE)
+  
+  
+  vi<- names(dw_graph)[8]
+  vg <- names(dw_graph)[7]
+  
+  #Observar tratamento especial para RCL e despesa de pessoal
+  graph<-
+  dw_graph %>%
+    group_by(AN_EXERCICIO, !!sym(vi), !!sym(vg)) %>%
+    summarise(
+      valor_total = ifelse(opcao$topico %in% c(topico_RCL,topico_pessoal), mean(VALUE), sum(VALUE))
+    ) %>%
+    ggplot()+
+      geom_col(aes(x=factor(AN_EXERCICIO), y = valor_total/10^6, fill = !!sym(vi))) +
+      scale_fill_viridis(discrete = TRUE)+
+      theme_light() +
+      theme(
+        #strip.text =  element_blank(),
+        axis.text.x =  element_text(angle = 90, hjust = 1),
+        panel.grid = element_blank()  )+
+      labs(
+        title = ifelse(opcao$topico %in% c(topico_RCL,topico_pessoal),"Valor médio do acumulado de 12 meses","Total"),
+        y = "Valor em R$ milhões",
+        x=  NULL,
+        fill = vg  )+
+      scale_y_continuous(labels=function(x) format(x, big.mark = ".", scientific = FALSE))
+    
+    
+    
+  return(graph)  
+  
+
+}
+
+generate_dt <- function(opcao, base_graph=FALSE, base_map = FALSE){
+  
+
+  
+  
+  filtro_complementar<- ""
+  
+  #Receita orçamentária
+
+  if (opcao$topico ==topico_RO){
+    
+    rel_siconfi<- 'QDCC'
+    anexo<- "DCA-Anexo I-C"
+    eixo_x<- "tipo_receita"
+    eixo_y<- "rubrica_receita"
+    
+    if (base_graph || base_map){
+      
+
+        filtro_complementar<- paste0(" NO_LABEL_EIXO_Y in(","'Total Receitas', 'TOTAL DAS RECEITAS (III) = (I + II)'",")")
+        
+
+    }
+
+  }
+  
+  #DEspesa orçamentária
+  if (opcao$topico ==topico_DO){
+    
+    rel_siconfi<- 'QDCC'
+    anexo<- "DCA-Anexo I-D"
+    eixo_x<- "fase_despesa"
+    eixo_y<- "rubrica_despesa"
+    
+
+
+    lista_fase<- paste0("'",opcao$fase[1], "'")
+  
+  
+    for (fase in opcao$fase[-1]){
+      lista_fase<- paste0(lista_fase,",","'", fase, "'")
+    }
+  
+
+    
+    filtro_complementar<- paste0(" NO_LABEL_EIXO_X in(",lista_fase,")")
+    
+    if (base_graph){
+      filtro_complementar<- paste0(filtro_complementar, " and NO_LABEL_EIXO_Y in(","'Total Geral da Despesa'",")")
+
+    }
+
+    if (base_map){
+      filtro_complementar<- paste0(filtro_complementar, " and NO_LABEL_EIXO_Y in(","'Total Geral da Despesa'",")")
+
+    }
+    
+  }
+  
+  #DEspesa por função
+  if (opcao$topico ==topico_funcao){
+    
+    
+    
+    rel_siconfi<- 'RREO'
+    anexo<- "RREO-Anexo 02"
+    eixo_x<- "fase_despesa"
+    eixo_y<- "funcao"
+    
+
+    lista_fase<- paste0("'",str_to_upper(opcao$fase[1]), " NO BIMESTRE'")
+  
+  
+    for (fase in opcao$fase[-1]){
+      
+      lista_fase<- paste0(lista_fase,",","'", str_to_upper(fase), " NO BIMESTRE'")
+    }
+    
+    
+    print("generate_dt")
+    print(opcao$ano)
+    print(opcao$escopo)
+    
+    if (min(opcao$ano) <= 2016 && opcao$escopo == "Governo Federal"){
+      
+      print("lista fase adicional")
+      lista_fase <- paste(lista_fase, ", 'No Bimestre'")
+      
+    }
+    
+
+    lista_funcao<- paste0("",opcao$funcao[1], ")")
+    
+    for (funcao in opcao$funcao[-1]){
+      lista_funcao<- paste0(lista_funcao,",","TO_NCHAR('", funcao, "')")
+    }  
+    
+    filtro_complementar<- paste0(" NO_LABEL_EIXO_X in(",lista_fase,")") 
+    
+
+  }
+  
+  #DEspesa por sub-função
+  if (opcao$topico ==topico_sub_funcao){
+    
+    
+    
+    rel_siconfi<- 'RREO'
+    anexo<- "RREO-Anexo 02"
+    eixo_x<- "fase_despesa"
+    eixo_y<- "sub_funcao"
+    
+
+    lista_fase<- paste0("'",str_to_upper(opcao$fase[1]), " NO BIMESTRE'")
+  
+  
+    for (fase in opcao$fase[-1]){
+      
+      lista_fase<- paste0(lista_fase,",","'", str_to_upper(fase), " NO BIMESTRE'")
+    }
+    
+    
+    print("generate_dt")
+    print(opcao$ano)
+    print(opcao$escopo)
+    
+    if (min(opcao$ano) <= 2016 && opcao$escopo == "Governo Federal"){
+      
+      print("lista fase adicional")
+      lista_fase <- paste(lista_fase, ", 'No Bimestre'")
+      
+    }
+    
+    print("opcao$sub_funcao")
+    print(opcao$sub_funcao)
+    
+    opcao$sub_funcao <- extract_sub_funcao(opcao$sub_funcao)
+
+    lista_sub_funcao<- paste0("",opcao$sub_funcao[1], ")")
+    
+    for (sub_funcao in opcao$sub_funcao[-1]){
+      lista_sub_funcao<- paste0(lista_sub_funcao,",","TO_NCHAR('", sub_funcao, "')")
+    }  
+    
+    
+    
+    filtro_complementar<- paste0(" NO_LABEL_EIXO_X in(",lista_fase,")") 
+    
+
+  }
+  
+  
+  #RCL
+  
+  if (opcao$topico ==topico_RCL){
+    
+    rel_siconfi<- 'RGF'
+    anexo<- "RGF-Anexo 01"
+    eixo_x<- "Tipo_Valor"
+    eixo_y<- "Rubrica"
+    
+    
+    
+
+    if ( opcao$escopo!="Governo Federal"){
+      filtro_complementar<- paste0("NR_POS_TABELA = 1  and ELEMENTNAME = 'ReceitaCorrenteLiquidaAjustada'") 
+      
+    } else{
+      filtro_complementar<- paste0("NR_POS_TABELA = 1  and ELEMENTNAME like 'ReceitaCorrenteLiquida%'") 
+    }
+      
+    
+    
+
+  }
+  
+  # Depesa com pessoal
+  
+  if (opcao$topico ==topico_pessoal){
+    
+    rel_siconfi<- 'RGF'
+    anexo<- "RGF-Anexo 01"
+    eixo_x<- "Tipo_Valor"
+    eixo_y<- "Rubrica"
+    
+    filtro_complementar<- paste0("NR_POS_TABELA = 1  and ELEMENTNAME = 'DespesaComPessoalTotal'")
+    
+    if (base_graph || base_map){
+      filtro_complementar<- paste0("NR_POS_TABELA = 1  and ELEMENTNAME = 'DespesaComPessoalTotal' and NO_LABEL_EIXO_X = 'Valor'")
+    }
+    
+
+
+  }
+  
+  # Mínimo constitucional com educação
+  if (opcao$topico == topico_min_edu){
+    
+    rel_siconfi<- 'RREO'
+    anexo<- 'RREO-Anexo 14'
+    eixo_x<- "Tipo_Valor"
+    eixo_y<- "Apuracao_Despesa"
+    
+    filtro_complementar<- "ELEMENTNAME = 'MinimoAnualDasReceitasDeImpostosNaManutencaoEDesenvolvimentoDoEnsinoDemonstrativoSimplificado'"
+    
+    if( base_graph || base_map){
+      
+      filtro_complementar <- paste0(filtro_complementar," and
+      SUBSTR(TO_NCHAR(SICONFI.NO_LABEL_EIXO_X),1,13) = 'Valor Apurado' and
+                             SICONFI.NR_PERIODO = (select max(NR_PERIODO)
+                                     FROM PRD_SICONFI.XBRL_FATONUMERICO
+                                     where AN_EXERCICIO = SICONFI.AN_EXERCICIO and
+                                     CO_TIPO_DEMONSTRATIVO = 'RREO' and 
+                                     NO_ANEXO = 'RREO-Anexo 14' )") 
+    } 
+    
+    
+
+    
+  }
+  
+  # Mínimo constitucional com saúde
+  if (opcao$topico == topico_min_saude){
+    
+    rel_siconfi<- 'RREO'
+    anexo<- 'RREO-Anexo 14'
+    eixo_x<- "Tipo_Valor"
+    eixo_y<- "Apuracao_Despesa"
+    
+    filtro_complementar<- "ELEMENTNAME = 'AplicacaoTotalDasDespesasComAcoesEServicosPublicosDeSaude'"
+    
+    if( base_graph || base_map){
+      
+      filtro_complementar <- paste0(filtro_complementar," and
+      SUBSTR(TO_NCHAR(SICONFI.NO_LABEL_EIXO_X),1,13) = 'Valor Apurado' and
+                             SICONFI.NR_PERIODO = (select max(NR_PERIODO)
+                                     FROM PRD_SICONFI.XBRL_FATONUMERICO
+                                     where AN_EXERCICIO = SICONFI.AN_EXERCICIO and
+                                     CO_TIPO_DEMONSTRATIVO = 'RREO' and 
+                                     NO_ANEXO = 'RREO-Anexo 14' )") 
+    } 
+    
+    
+
+    
+  }
+  
+
+    
+  
+  #print(filtro_complementar)
+  
+  raw_data<- execute_SQL(rel_siconfi, anexo,eixo_x, eixo_y, opcao, filtro_complementar)
+  
+  #print("raw_data")
+  #print(raw_data)
+  #print(names(raw_data))
+  #print(NROW(raw_data))
+  
+  if (NROW(raw_data) == 0){
+    return()
+  }
+  
+  if (opcao$topico == topico_funcao){
+    
+    # lista_funcao<- paste0("('",opcao$funcao[1], "'")
+    # 
+    # for (funcao in opcao$funcao[-1]){
+    #   lista_funcao<- paste0(lista_funcao,",","'", funcao, ")")
+    # }  
+    # 
+    # print(lista_funcao)
+    
+    print(opcao$funcao)
+    
+    sel_funcao<- opcao$funcao
+    
+    if (is.null(opcao$funcao)){
+      sel_funcao<- get_lista_funcao()
+    }
+      
+      
+  
+    
+    raw_data<-
+    raw_data%>%
+      filter(str_trim(funcao) %in% str_trim(sel_funcao)) %>%
+      mutate(ELEMENTLABEL = ifelse(ELEMENTLABEL=="Total de Despesas","Total de Despesas Intraorçamentária",ELEMENTLABEL))
+    
+  }
+
+  if (opcao$topico == topico_sub_funcao){
+    
+
+    print(opcao$sub_funcao)
+    
+    sel_sub_funcao<- opcao$sub_funcao
+    
+    if (is.null(opcao$sub_funcao)){
+      sel_funcao<- get_lista_sub_funcao()
+    }
+      
+      
+  
+    
+    raw_data<-
+    raw_data%>%
+      filter(str_trim(sub_funcao) %in% str_trim(sel_sub_funcao)) %>%
+      mutate(ELEMENTLABEL = ifelse(ELEMENTLABEL=="Total de Despesas","Total de Despesas Intraorçamentária",ELEMENTLABEL))
+    
+  }
+    
+  
+  
+  if (opcao$topico %in% c(topico_RCL,topico_pessoal)){
+    
+    raw_data<-
+    raw_data%>%
+      mutate( NO_ORGAO = ifelse(!is.na(NO_LABEL_ROTULO) & NO_LABEL_ROTULO!= "Padrão", str_c(NO_ORGAO, "-", NO_LABEL_ROTULO ), NO_ORGAO )) %>%
+    select(-NO_LABEL_ROTULO)  
+    
+  }
+
+  
+  raw_data$dh_consulta<- timestamp()
+  
+  
+  
+  return(raw_data)
+  
+  
+}
+
+#Apresentação SER mapa
+generate_map<- function(opcao){
+  
+  print("opcao")
+  print(opcao)
+  
+  opcao$ano<- sort(opcao$ano)
+  
+  
+  lista_ano<- opcao$ano[1]
+  
+  
+  for (ano in opcao$ano[-1]){
+    lista_ano<- paste(lista_ano,ano,sep = ",")
+  }
+
+  
+  
+  df_map<-generate_dt(opcao, base_map = TRUE)
+  
+  #print("df_map")
+  #print(df_map)
+  
+  if (is.null(df_map)){
+    return()
+    
+  }
+  
+
+  names(df_map)[10]<- "legenda"
+  
+  legenda<- unique(df_map$legenda)
+  #print(legenda)
+  #legenda<- str_replace(legenda,"c","")
+  
+  lista_legenda<- legenda[1]
+  
+  
+  for (a_legenda in legenda[-1]){
+    lista_legenda<- paste(lista_legenda,a_legenda,sep = ",")
+  }
+  
+  #print(lista_legenda)
+  
+  legenda<- lista_legenda
+
+  
+
+  
+  
+  
+  
+  
+  #print(df_map)
+  
+  if (opcao$escopo=="Governo Federal"){
+    
+
+    
+    df_map <-
+      df_map %>%
+      
+      group_by(SG_ENTE) %>%
+      summarise(
+        valor_total = ifelse(opcao$topico %in% c(topico_RCL,topico_pessoal), mean(VALUE), sum(VALUE))
+      )
+    
+    brasil_map$SG_ENTE<- "BR"
+    plot_map<-
+    brasil_map %>% 
+      inner_join(df_map) %>%
+      ggplot()+
+      geom_sf(aes(fill=  valor_total/10^6), color="gray", size=.15, show.legend = TRUE) +
+      scale_fill_viridis_c(option = "plasma", labels=function(x) format(x, big.mark = ".", scientific = FALSE)) +
+      theme_minimal() +
+      labs(
+        fill= str_wrap(paste(legenda, ifelse(opcao$topico %in% c(topico_RCL,topico_pessoal), "Média de valores acumulados em 12 meses em R$(mi)", "valores acumulados em R$(mi)")),20),
+        title = paste(input$topico, "- Governo Federal.", "Ano(s)", lista_ano)
+      )
+    
+    return(plot_map)
+      
+    
+  } else if (opcao$escopo=="Estados" ){
+    
+    df_map <-
+      df_map %>%
+      
+      group_by(SG_ENTE) %>%
+      summarise(
+        valor_total = ifelse(opcao$topico %in% c(topico_RCL,topico_pessoal), mean(VALUE), sum(VALUE))
+      )
+
+    
+    plot_map<- 
+      state_map %>%
+      inner_join(
+        df_map %>%
+          mutate(abbrev_state = SG_ENTE)
+      ) %>%
+      ggplot()+
+      geom_sf(data= brasil_map, fill= "white",color= "gray")+
+      geom_sf(aes(fill=  valor_total/10^6), color="gray", size=.15, show.legend = TRUE) +
+      scale_fill_viridis_c(option = "plasma", labels=function(x) format(x, big.mark = ".", scientific = FALSE), direction = -1) +
+      theme_minimal() +
+      labs(
+        fill=  str_wrap(paste(legenda, ifelse(opcao$topico %in% c(topico_RCL,topico_pessoal), "Média de valores acumulados em 12 meses em R$(mi)", "valores acumulados em R$(mi)")),20),
+        title = paste(input$topico, "- Estados Selecionados.", "Ano(s)", lista_ano)
+      )
+    
+    return(plot_map)
+      
+    
+  } else if (opcao$escopo == "Municípios"){
+      df_map <-
+      df_map %>%
+      
+      group_by(ID_ENTE, SG_ENTE) %>%
+      summarise(
+        
+        valor = ifelse(opcao$topico %in% c(topico_RCL,topico_pessoal),mean(VALUE, na.rm = TRUE)/10^6, trunc(sum(VALUE)/max(QT_HABITANTE, na.rm = TRUE))),
+        soma_valor= sum(VALUE),
+        max_qt_hab= max(QT_HABITANTE, na.rm = TRUE)
+        
+ 
+      )
+      
+
+      print(opcao$topico)
+      
+      val_min<- min(df_map$valor)
+      val_max<- max(df_map$valor)
+ 
+      
+      
+    
+    plot_map<-
+    muni_map %>% 
+      inner_join(df_map %>%
+                mutate(code_muni = ID_ENTE,
+                        abbrev_state = SG_ENTE)) %>%
+      ggplot()+
+      geom_sf(data= brasil_map, fill= "white",color= "gray")+
+      geom_sf(data= state_map, fill= "white", color = "gray") +
+      geom_sf(aes(color=  valor), show.legend = TRUE, alpha= 0.5)+ 
+      scale_color_viridis_c(option = "plasma", labels=function(x) format(x,decimal.mark = ",", big.mark = ".", scientific = FALSE), limits = c(val_min, val_max), direction = -1)+ #limits = c(val_min, val_max),
+    
+      theme_minimal() +
+      labs(
+        color= str_wrap(paste(legenda, ifelse(opcao$topico %in% c(topico_RCL,topico_pessoal), "Média de valores acumulados em 12 meses em R$(mi)", "valores acumulados por habitante")),20),
+        title = paste(input$topico, "- Municípios Selecionados.", "Ano(s)", lista_ano)
+      )
+    
+    return(plot_map)
+  }
+  
+
+}
+  
+  
+
+
+# generate_script<- function(opcao){
+#   
+#   lines_script<- tibble(script="" )
+#   
+#   lines_script[1,1]<- '# install.packages("devtools")'
+#   lines_script[2,1]<- 'devtools::install_github("tchiluanda/rsiconfi")' 
+#   lines_script[3,1]<- 'library(rsiconfi)' 
+#   lines_script[4,1]<- "#get data using rsiconfi which is the package that consumes SICONFI API"
+#   
+#   lista_ano<- opcao$ano[1]
+#   
+#   opcao_uf <- (opcao$tipo_cons_mun=="Todos de uma ou mais UFs" & opcao$escopo == "Municípios")
+#   
+#   for (ano in opcao$ano[-1]){
+#     lista_ano<- paste(lista_ano,ano,sep = ",")
+#   }
+#   
+#   lista_fase<- paste0("'",opcao$fase[1], "'")
+#   for (fase in opcao$fase[-1]){
+#     lista_fase<- paste0(lista_fase,",","'", fase, "'")
+#   }
+#   
+#   lista_instituicao <- get_lista_instituicao(opcao)
+#   
+#   lista_instituicao_script<- paste0("'",lista_instituicao[1], "'")
+#   for (instituicao in lista_instituicao[-1]){
+#     lista_instituicao_script<- paste0(lista_instituicao_script,",","'", instituicao, "'")
+#   }
+#   
+#   
+#   funcao<-
+#     (contas %>%
+#        filter(conta %in% opcao$funcao) %>%
+#        select(cod_interno))$cod_interno
+#   
+#   
+#   
+#   lista_funcao<- paste0("'",funcao[1], "'")
+#   
+#   
+#   
+#   for (funcao in funcao[-1]){
+#     lista_funcao<- paste0(lista_funcao,",","'", funcao, "'")
+#   }
+#   
+#   
+#   
+#   if (opcao$topico ==1){
+#     
+#     if (opcao_uf){
+#       
+#       lines_script[5,1]<- paste0("df_rec <- rsiconfi::get_dca_mun_state(c(",lista_ano,"),'I-C',c(", lista_instituicao_script,"))")
+#       
+#       
+#     } else{
+#       
+#       lines_script[5,1]<- paste0("df_rec <- rsiconfi::get_dca(c(",lista_ano,"),'I-C',c(", lista_instituicao_script,"))")
+#       
+#       
+#       
+#     }
+#     
+#     
+#   }
+#   
+#   if (opcao$topico ==2){
+#     
+#     if (opcao_uf){
+#       
+#       lines_script[5,1]<- paste0("df_rec <- rsiconfi::get_dca_mun_state(c(",lista_ano,"),'I-D',c(", lista_instituicao_script,"))")
+#       
+#       
+#     } else{
+#       
+#       lines_script[5,1]<- paste0("df_rec <- rsiconfi::get_dca(c(",lista_ano,"),'I-D',c(", lista_instituicao_script,"))")
+#       
+#       
+#       
+#     }
+#     
+#     
+#     lines_script[6,1]<- "#Filter the data. Only the selected expenditure phases will be available"
+#     lines_script[7,1]<- paste0("df_desp <-df_desp%>%filter(coluna %in% c(",lista_fase,"))")
+#     
+#   }
+#   
+#   if (opcao$topico ==3){
+#     
+#     lines_script [5,1] <- "#Call the method that retrieves data for the specified government functions"
+#     
+#     if (opcao_uf){
+#       
+#       lines_script[6,1]<- paste0("df_func <- rsiconfi::get_dca_mun_state(c(",lista_ano,"),'I-E',c(", lista_instituicao_script,"),arg_cod_conta =c(", lista_funcao,"))")
+#       
+#       
+#     } else{
+#       
+#       lines_script[6,1]<- paste0("df_func <- rsiconfi::get_dca(c(",lista_ano,"),'I-E',c(", lista_instituicao_script,"),arg_cod_conta =c(", lista_funcao,"))")
+#       
+#       
+#       
+#     }
+#     
+#     
+# 
+#     lines_script[7,1]<- "#Filter the data. Only the selected expenditure phases will be available"
+#     lines_script[8,1]<- paste0("df_func <-df_func%>%filter(coluna %in% c(",lista_fase,"))")
+#     
+#   }
+#   
+#   
+#   
+#   lines_script
+#   
+#   
+# }
+
+```
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+radioButtons("topico",label = "Escolha o tipo de consulta", choices = unique(glossario_siconfi%>%
+  select(topico))$topico, selected = (glossario_siconfi%>%
+  select(topico))$topico[1])
+
+useShinyjs(rmd = TRUE)
+
+hidden(
+         div(id = "ano", selectInput("ano", label ="Informe o ano", choices = 2021:2014, selected = 2020, multiple = TRUE)))
+
+hidden(
+  div(id = "periodicidade", radioButtons("periodicidade", label ="Informe a periodicidade", choices = c("Bimestral","Quadrimestral","Semestral", "Anual"), selected = "Anual"))
+  
+         )
+
+hidden(
+  div(id = "fase", checkboxGroupInput("fase", label ="Informe a fase da despesa", choices = c("Despesas Empenhadas", "Despesas Liquidadas","Despesas Pagas"), selected = "Despesas Liquidadas"))
+  
+         )
+
+hidden(
+         div(id = "funcao", selectInput("funcao", label ="Informe a função de governo", choices = get_lista_funcao(), selected = c("Saúde", "Educação"), multiple = TRUE)))
+
+
+hidden(
+         div(id = "sub_funcao", selectInput("sub_funcao", label ="Informe a sub-função de governo", choices = get_lista_sub_funcao(),selected = "Saúde-Atenção Básica",  multiple = TRUE)))
+
+
+
+hidden(
+  div(id = "escopo", radioButtons("escopo", label ="Informe o escopo da consulta", choices = c("Governo Federal", "Estados","Municípios"), selected = "Governo Federal"))
+  
+         )
+
+hidden(
+         div(id = "uf", selectInput("uf", label ="Selecione uma ou mais UF", choices = sort((municipios_IBGE%>%filter(!is.na(cod_uf))%>%distinct(uf))$uf), selected = "SP", multiple = TRUE)))
+
+
+
+hidden(
+  div(id = "tipo_cons_mun", radioButtons("tipo_cons_mun", label ="Informe o filtro para municípios", choices = c("Escolher de uma lista", "Todos de uma ou mais UFs","Por Mesoregião", "Por faixa populacional - quartis", "Por faixa populacional - grupos ibge", "Por posição PIB per-capita", "Por posição PIB total", "Por principal atividade econômica", "Por agrupamento econômico" ), selected = "Escolher de uma lista"))
+  
+         )
+
+hidden(
+         div(id = "municipio", selectInput("municipio", label ="Selecione um ou mais municípios", choices = municipios_IBGE$nome_municipio, selected = "São Paulo", multiple = TRUE)))
+
+
+hidden(
+         div(id = "mun_uf", selectInput("mun_uf", label ="Selecione uma ou mais UF para filtrar os municípios", choices = sort((municipios_IBGE%>%filter(!is.na(cod_uf))%>%distinct(uf))$uf), selected = "SP", multiple = TRUE)))
+
+hidden(
+         div(id = "mun_meso", selectInput("mun_meso", label ="Selecione uma ou mais mesoregiões para filtrar os municípios", choices = get_lista_mesoregioes(), selected = "Metropolitana de São Paulo", multiple = TRUE)))
+
+hidden(
+         div(id = "mun_pib_pc", sliderInput("mun_pib_pc", label ="Selecione uma faixa de posições", min= 1, max= NROW(ibge_pib_mun), step = 100,value = c(0,100))))
+
+hidden(
+         div(id = "mun_pib_total", sliderInput("mun_pib_total", label ="Selecione uma faixa de posições", min= 1, max= NROW(ibge_pib_mun), step = 100,value = c(0,100))))
+
+
+hidden(
+         div(id = "mun_atv_eco", checkboxGroupInput("mun_atv_eco", label ="Selecione uma ou mais atividades econômicas", choices = get_lista_atividades(), selected = get_lista_atividades()[1])))
+
+
+hidden(
+         div(id = "mun_grp_eco", selectInput("mun_grp_eco", label ="Selecione um município do agrupamento econômico", choices = municipios_IBGE$nome_municipio, selected = "São Paulo")))
+
+
+hidden(
+  div(id = "mun_pop", checkboxGroupInput("mun_pop", label ="Selecione uma ou mais faixas populacionais", choices = c("Primeiro quartil", "Segundo quartil","Terceiro quartil", "Quarto quartil"), selected = c("Primeiro quartil", "Segundo quartil","Terceiro quartil", "Quarto quartil")))
+  
+         )
+
+
+hidden(
+  div(id = "mun_pop_faixa", checkboxGroupInput("mun_pop_faixa", label ="Selecione uma ou mais faixas populacionais", choices =faixas_ibge , selected = faixas_ibge[8])
+           ))
+
+
+
+hidden(
+         div(id = "fim", textInput("fim", "Fim", value = "Obrigado por usar a nossa interface.", width = NULL,
+   placeholder = NULL)))
+
+
+hidden( div(id = "finalizar",actionButton("finalizar", "Finalizar")))
+
+hidden(
+         div(id = "state", textInput("state", "estado", value = "1", width = NULL,
+   placeholder = NULL)))
+
+
+# hidden(
+#          div(id = "fl_grafico", textInput("fl_grafico", "fl_grafico", value = "1", width = NULL,
+#    placeholder = NULL)))
+# 
+# hidden(
+#          div(id = "fl_dado", textInput("fl_dado", "fl_dado", value = "1", width = NULL,
+#    placeholder = NULL)))
+
+
+hidden(
+         div(id = "anterior", actionButton("anterior", "Anterior", width = '100%')))
+
+
+hidden(
+         div(id = "finalizar", actionButton("finalizar", "Finalizar", width = '100%')))
+
+
+
+
+
+
+
+div(id = "proximo", actionButton("proximo", "Próximo", width = '100%'))
+# div(id = "grafico", actionButton("grafico", "Gera Gráfico", width = '100%'))
+# div(id = "dados", actionButton("dados", "Gera Dados", width = '100%'))
+
+hidden(
+         div(id = "download_dados", downloadLink("download_dados","Download dados\n\r")))
+
+
+
+
+```
+
+```{r}
+
+
+observeEvent(input$topico, {
+  
+  #print("input$topico")
+  #print(input$topico)
+  
+  fase_sel<- input$fase
+    
+  escopo_sel<- input$escopo
+  
+  # if (input$topico %in% c("Receita Corrente Líquida","Despesas com pessoal Total")){
+  #   updateRadioButtons(session = session, inputId = "escopo", choices= c( "Estados","Municípios"), selected=  "Estados")
+  # } else{
+  #   updateRadioButtons(session = session, inputId = "escopo", choices= c("Governo Federal", "Estados","Municípios"), selected=  escopo_sel)
+  # }
+  # 
+  if (input$topico %in% c("Despesa Por Função", "Despesa Por Sub-Função")){
+    updateCheckboxGroupInput (session = session, inputId = "fase", choices= c( "Despesas Empenhadas","Despesas Liquidadas"), selected=  "Despesas Liquidadas")
+  } else{
+    updateCheckboxGroupInput (session = session, inputId = "fase", choices= c("Despesas Empenhadas", "Despesas Liquidadas","Despesas Pagas"), selected=  fase_sel)
+  }
+
+
+})
+
+
+
+observeEvent(input$proximo, {
+  
+  shinyjs::hide("download_dados")
+  set_next_state(input$state, "P")
+
+
+})
+
+
+observeEvent(input$anterior, {
+
+  shinyjs::hide("download_dados")
+  set_next_state(input$state, "A")
+  
+
+})
+
+
+
+observeEvent(input$dados, {
+  
+  #show_data<<- TRUE
+  shinyjs::hide("download_dados")
+
+  #updateTextInput(session,"fl_dado",value=1)
+  
+  
+
+})
+
+
+
+
+
+
+output$download_dados<- downloadHandler(
+  filename = function() {
+    paste('dados_consulta',  '.csv', sep='')
+  },
+  content = function(file) {
+    write.table(raw_data_down, file, sep = ";",row.names = FALSE,fileEncoding = "UTF-8",dec=",")
+    shinyjs::hide("download_dados")
+  }
+)
+
+
+```
+
+
+
+Column {data-width=200}
+-----------------------------------------------------------------------
+
+### Instruções
+
+
+```{r}
+
+library(DT)
+
+renderDataTable({
+  
+  instrucoes_trabalho<- 
+     instrucoes%>%
+     filter(estado==input$state)%>%
+   select(instrucoes)
+  
+  
+  DT::datatable(
+    instrucoes_trabalho,
+    #class = "",
+    rownames = FALSE,
+    colnames = c(""),
+    fillContainer = TRUE,
+    selection = c("none"),
+    #extensions = 'Buttons', 
+    options = list(
+       ordering=FALSE,
+       paging=FALSE,
+       searching= FALSE,
+       info = FALSE,
+       pageLength = NROW(instrucoes_trabalho)#,
+       #dom = 'Bfrtip'#,
+       #buttons = c('copy')
+    )
+  )
+
+  
+
+  
+})
+
+
+```
+
+
+### Sobre a sua escolha
+
+```{r}
+
+renderDataTable({
+  
+  glossario_trabalho<-
+    glossario_siconfi%>%
+    filter(topico==input$topico) %>%
+    select(explicacao)
+  
+  
+  DT::datatable(
+    glossario_trabalho,
+    #class = "",
+    rownames = FALSE,
+    colnames = c(""),
+    fillContainer = TRUE,
+    selection = c("none"),
+    #extensions = 'Buttons', 
+    options = list(
+       ordering=FALSE,
+       paging=FALSE,
+       searching= FALSE,
+       info = FALSE,
+       pageLength = NROW(glossario_trabalho)#,
+       #dom = 'Bfrtip'#,
+       #buttons = c('copy')
+    )
+  )
+})
+
+```
+
+
+Column {.tabset .tabset-fade}
+-----------------------------------------------------------------------
+
+### Mapa com dados da seleção
+
+```{r}
+
+
+renderPlot({
+  
+  if (is.null(input$ano)){
+    update
+  }
+    
+    
+    
+    
+  
+   id_topico<-
+      (glossario_siconfi%>%
+         filter(topico==input$topico)%>%
+         select(id))$id[1]
+
+  
+  id_opcao<- list(topico = id_topico,
+                  ano= input$ano,
+                  fase = input$fase,
+                  funcao= input$funcao,
+                  sub_funcao = input$sub_funcao,
+                  escopo = input$escopo,
+                  uf = input$uf,
+                  tipo_cons_mun = input$tipo_cons_mun,
+                  municipio = input$municipio,
+                  mun_uf = input$mun_uf,
+                  mun_pop = input$mun_pop,
+                  mun_pop_faixa = input$mun_pop_faixa,
+                  mun_meso = input$mun_meso,
+                  mun_pib_pc = input$mun_pib_pc,
+                  mun_pib_total = input$mun_pib_total,
+                  mun_atv_eco = input$mun_atv_eco,
+                  mun_grp_eco = input$mun_grp_eco
+  )
+  
+  #print("extract_lista_sub_funcao")
+  #print(extract_sub_funcao(get_lista_sub_funcao()[1]))
+  
+  print("input sub_funcao")
+  print(input$sub_funcao)
+  
+  print("id_opcao")
+  print(id_opcao)
+  
+  
+  
+  plot_map<-generate_map(id_opcao)
+  
+  if (is.null ( plot_map)) {
+      showModal(modalDialog(
+      title = "Registros não encontrados",
+      paste0("A condição de consulta não localizou linhas no banco de dados."),#paste0("It seems you have logged in as",input$userid,'.'),
+      easyClose = FALSE,
+      footer = modalButton("Retornar")
+      
+    ))
+    return()
+  }
+  
+  plot_map
+  
+  
+  
+  
+  
+})
+
+
+```
+
+
+### Dados brutos da seleção
+
+```{r}
+library(DT)
+
+
+renderDataTable(server= FALSE, {
+  
+  
+  
+  
+  id_topico<-
+    (glossario_siconfi%>%
+       filter(topico==input$topico)%>%
+       select(id))$id[1]
+  
+  id_opcao<- list(topico = id_topico, 
+                  ano= input$ano, 
+                  fase = input$fase,
+                  funcao= input$funcao, 
+                  sub_funcao = input$sub_funcao,
+                  escopo = input$escopo,
+                  uf = input$uf,
+                  tipo_cons_mun = input$tipo_cons_mun,
+                  municipio = input$municipio,
+                  mun_uf = input$mun_uf,
+                  mun_pop = input$mun_pop,
+                  mun_pop_faixa = input$mun_pop_faixa,
+                  mun_meso = input$mun_meso,
+                  mun_pib_pc = input$mun_pib_pc,
+                  mun_pib_total=  input$mun_pib_total,
+                  mun_atv_eco = input$mun_atv_eco,
+                  mun_grp_eco = input$mun_grp_eco
+  )
+  
+  raw_data<- generate_dt(id_opcao)
+  
+  if (is.null ( raw_data)) {
+    showModal(modalDialog(
+      title = "Registros não encontrados",
+      paste0("A condição de consulta não localizou linhas no banco de dados."),#paste0("It seems you have logged in as",input$userid,'.'),
+      easyClose = FALSE,
+      footer = modalButton("Retornar")
+      
+    ))
+    return()
+  }
+  
+  
+  
+  if (NROW(raw_data) > 50000){
+    
+    showModal(modalDialog(
+      title = "Muitas linhas",
+      paste0("A consulta retornou mais de 50000 linhas e a tabela será preenchida com uma amostra de 30000 linhas dos dados. Use o link de download logo abaixo do botão próximo para baixar os dados completos em formato csv"),#paste0("It seems you have logged in as",input$userid,'.'),
+      easyClose = FALSE,
+      footer = modalButton("Retornar")
+    ))
+    raw_data_down<<-raw_data
+    shinyjs::show("download_dados")
+    raw_data<- raw_data[sample(1:NROW(raw_data),30000),]
+    #return()
+  }
+  
+  
+  
+  
+  DT::datatable(
+    raw_data,
+    rownames = FALSE,
+    fillContainer = TRUE,
+    filter = "top",
+    selection = c("none"),
+    
+    extensions = 'Buttons', options = list(
+      
+      pageLength = 100,
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv', 'excel', 'pdf', 'print')
+    )
+  )
+  
+  
+  
+  
+  
+})
+
+```
+
+
+### Gráfico com dados da seleção
+
+```{r}
+
+
+renderPlot({
+  
+  id_topico<-
+    (glossario_siconfi%>%
+       filter(topico==input$topico)%>%
+       select(id))$id[1]
+  
+  id_opcao<- list(topico = id_topico,
+                  ano= input$ano,
+                  fase = input$fase,
+                  funcao= input$funcao,
+                  sub_funcao = input$sub_funcao,
+                  escopo = input$escopo,
+                  uf = input$uf,
+                  tipo_cons_mun = input$tipo_cons_mun,
+                  municipio = input$municipio,
+                  mun_uf = input$mun_uf,
+                  mun_pop = input$mun_pop,
+                  mun_pop_faixa = input$mun_pop_faixa,
+                  mun_meso = input$mun_meso,
+                  mun_pib_pc = input$mun_pib_pc,
+                  mun_pib_total = input$mun_pib_total,
+                  mun_atv_eco = input$mun_atv_eco,
+                  mun_grp_eco = input$mun_grp_eco
+  )
+  
+  
+  
+  graph<<-generate_graph(id_opcao)
+  
+  
+  
+  graph
+  
+  
+  
+})
+
+
+```
+
+
+### Metadados da tabela
+
+```{r}
+
+renderDataTable({
+  id_topico<-
+    (glossario_siconfi%>%
+       filter(topico==input$topico)%>%
+       select(id))$id[1]
+  
+  metadados <- read_delim("metadados.csv", 
+                          ";", escape_double = FALSE, trim_ws = TRUE)
+  
+  DT::datatable(
+    metadados %>%
+      filter(relatorio==id_topico) %>%
+      select(-1),
+    colnames = c("Coluna","Tipo", "Descrição", "Observações" ),
+    rownames = FALSE,
+    fillContainer = TRUE,
+    filter = "top",
+    selection = c("none"),
+    
+    extensions = 'Buttons', options = list(
+      
+      pageLength = 100,
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv', 'excel', 'pdf', 'print')
+    )
+  )
+  
+  
+  
+})
+
+
+```
+
+
+
+
+### Raio X dos municípios
+
+```{r}
+
+renderDataTable(server= FALSE,{
+  
+  id_topico<-
+    (glossario_siconfi%>%
+       filter(topico==input$topico)%>%
+       select(id))$id[1]
+  
+  id_opcao<- list(topico = id_topico,
+                  ano= input$ano,
+                  fase = input$fase,
+                  funcao= input$funcao,
+                  escopo = input$escopo,
+                  uf = input$uf,
+                  tipo_cons_mun = input$tipo_cons_mun,
+                  municipio = input$municipio,
+                  mun_uf = input$mun_uf,
+                  mun_pop = input$mun_pop,
+                  mun_pop_faixa = input$mun_pop_faixa,
+                  mun_meso = input$mun_meso,
+                  mun_pib_pc = input$mun_pib_pc,
+                  mun_pib_total = input$mun_pib_total,
+                  mun_atv_eco = input$mun_atv_eco,
+                  mun_grp_eco = input$mun_grp_eco
+  )
+  
+  opcao_uf <- (id_opcao$tipo_cons_mun=="Todos de uma ou mais UFs" & id_opcao$escopo == "Municípios")
+  
+  if(opcao_uf){
+    
+    
+    
+    df_trabalho<-
+    municipios_IBGE %>%
+      filter(uf %in% id_opcao$mun_uf) %>%
+      inner_join(ibge_pib_mun )
+    
+  } else{
+    lista_instituicao_sel <- get_lista_instituicao(id_opcao)
+    
+
+    df_trabalho<-
+    municipios_IBGE %>%
+      filter(cod_mun %in% lista_instituicao_sel) %>%
+      inner_join(ibge_pib_mun ) 
+  
+
+  }
+  
+  
+  ##Apresentação SER datable
+  DT::datatable(
+    df_trabalho,
+    rownames = FALSE,
+    fillContainer = TRUE,
+    filter = "top",
+    selection = c("none"),
+    colnames = c("UF", "cod.UF", "cod Municipio", "Nome do municipio", "População estimada", "PIB per capita", "PIB TOTAL (em R$ mil)", "Atividade econômica", "Ranking PIB per capita", "Ranking PIB Total"),
+    extensions = 'Buttons', options = list(
+
+      pageLength = 100,
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv', 'excel', 'pdf', 'print')
+    )
+  ) %>%
+    formatRound(c(5),digits = 0, mark=".", dec.mark= ",")  %>%
+    formatRound(c(6,7),digits = 0, mark=".", dec.mark= ",")
+
+ 
+
+  
+})
+
+```
+
