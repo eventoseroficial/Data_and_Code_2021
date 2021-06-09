@@ -1,0 +1,7 @@
+Função;Tipo de marcação comparada;Comparação com Quality
+CPF & CNPJ;Tipo de pessoa;99,91%
+Nome;Primeiro nome;98,50%
+Sexo;Sexo;94,44%
+E-mail;Validação de e-mail;99,76%
+Telefone;Validação de DDD e número;90,70%
+Endereço;Validação de endereço;89,50%
